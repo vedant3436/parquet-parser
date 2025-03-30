@@ -3,15 +3,19 @@ import json
 import pyarrow.parquet as pq
 import pandas as pd
 from flask import Flask, request, jsonify
+from io import BytesIO  # Add this to handle the file stream
 
 app = Flask(__name__)
 
 # Function to parse the parquet file and return the output as a dictionary
 def parse_parquet_file(file):
     try:
+        # Read file into a BytesIO stream
+        file_stream = BytesIO(file.read())  # Convert file to a BytesIO object
+        
         # Open the Parquet file
         print(f"Reading Parquet file...")
-        parquet_file = pq.ParquetFile(file)
+        parquet_file = pq.ParquetFile(file_stream)
 
         # Extract schema
         schema = parquet_file.schema_arrow
@@ -39,11 +43,19 @@ def parse_parquet_file(file):
             for i in range(rg_metadata.num_columns):
                 col_chunk = rg_metadata.column(i)
                 stats = col_chunk.statistics
-                row_group_metadata["columns"][schema[i].name] = {
-                    "min": stats.min if stats.has_min_max else None,
-                    "max": stats.max if stats.has_min_max else None,
-                    "null_count": stats.null_count if stats.has_null_count else None
-                }
+                if stats is not None:  # Check if statistics are available
+                    row_group_metadata["columns"][schema[i].name] = {
+                        "min": stats.min if stats.has_min_max else None,
+                        "max": stats.max if stats.has_min_max else None,
+                        "null_count": stats.null_count if stats.has_null_count else None
+                    }
+                else:
+                    # If no stats are available, we can handle it here (e.g., set as None or empty)
+                    row_group_metadata["columns"][schema[i].name] = {
+                        "min": None,
+                        "max": None,
+                        "null_count": None
+                    }
 
         # Read the data into a Pandas DataFrame
         table = parquet_file.read()
